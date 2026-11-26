@@ -223,7 +223,7 @@
   </div>
 
   <section class="panel" style="margin-bottom:var(--gap)">
-    <div class="section-head"><div><h2 class="section-title">Intelligent lighting capabilities</h2><div class="section-sub">Groq analyzes live ESP32 telemetry and returns a separate assessment for every capability.</div></div><span class="tag" id="storedRecordCount">0 local records</span></div>
+    <div class="section-head"><div><h2 class="section-title">Intelligent lighting capabilities</h2><div class="section-sub">Groq analyzes live ESP32 telemetry and returns a separate assessment for every capability.</div></div><span class="tag" id="storedRecordCount">Permanent history ready</span></div>
     <div class="feature-grid">
       <article class="feature-card"><div class="feature-num">01 · CORE</div><h3>Traffic-aware illumination</h3><p>Smooth PWM prediction from 15% idle to 100% active using distance telemetry.</p><div class="feature-status"><span id="trafficPrediction">Awaiting live AI assessment</span><span class="feature-alert muted" id="trafficAlert">No telemetry</span></div></article>
       <article class="feature-card"><div class="feature-num">02 · CORE</div><h3>Day/night hysteresis</h3><p>Schmitt-trigger analysis helps avoid LDR switching from headlights and clouds.</p><div class="feature-status"><span id="hysteresisPrediction">Awaiting live AI assessment</span><span class="feature-alert muted" id="hysteresisAlert">No telemetry</span></div></article>
@@ -400,6 +400,7 @@
     telemetryTimeoutMs: 9000
   });
   window.SOLAR_AI_CHAT_API = window.SOLAR_AI_CHAT_API || "/api/chat";
+  window.SOLAR_AI_HISTORY_API = window.SOLAR_AI_HISTORY_API || "/api/history";
 
   const $ = id => document.getElementById(id);
   const setText = (id, v) => { const el = $(id); if (el) el.textContent = v; };
@@ -423,17 +424,33 @@
     catch (error) { addLog(`Local storage unavailable: ${error.message}`, "warn"); }
   }
   function updateStoredRecordCount() {
-    setText("storedRecordCount", `${storedTelemetry.length + storedPredictions.length} local records`);
+    setText("storedRecordCount", "Saving permanent history");
+  }
+  async function persistHistory(payload) {
+    try {
+      const response = await fetch(window.SOLAR_AI_HISTORY_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (!response.ok) throw new Error("History storage request failed.");
+      setText("storedRecordCount", "Permanent history active");
+    } catch (error) {
+      setText("storedRecordCount", "Permanent history unavailable");
+      addLog(`History storage failed: ${error.message}`, "warn");
+    }
   }
   function storeTelemetrySnapshot(telemetry) {
-    storedTelemetry.push({ savedAt: new Date().toISOString(), device: telemetry });
+    const record = { savedAt: new Date().toISOString(), device: telemetry };
+    storedTelemetry.push(record);
     while (storedTelemetry.length > 120) storedTelemetry.shift();
     writeStored(STORAGE_KEYS.telemetry, storedTelemetry); updateStoredRecordCount();
+    void persistHistory({ telemetry: [record] });
   }
   function storePrediction(question, reply) {
-    storedPredictions.push({ savedAt: new Date().toISOString(), question, reply });
+    const record = { savedAt: new Date().toISOString(), question, reply };
+    storedPredictions.push(record);
     while (storedPredictions.length > 30) storedPredictions.shift();
     writeStored(STORAGE_KEYS.predictions, storedPredictions); updateStoredRecordCount();
+  }
+  if (storedTelemetry.length || storedPredictions.length) {
+    void persistHistory({ telemetry: storedTelemetry, predictions: storedPredictions });
   }
 
   function addLog(message, type = "info") {

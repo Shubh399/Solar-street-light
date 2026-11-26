@@ -1,3 +1,5 @@
+import { loadRecentHistory, saveHistory } from "../lib/history.mjs";
+
 export const config = { path: "/api/chat" };
 
 const SYSTEM_PROMPT =
@@ -73,6 +75,14 @@ export default async (request) => {
     telemetry = telemetry.slice(0, MAX_TELEMETRY_CHARS) + "…[truncated]";
   }
 
+  let history = "{}";
+  try {
+    history = JSON.stringify(await loadRecentHistory());
+  } catch (error) {
+    console.warn("Persistent history is unavailable:", error?.message || error);
+  }
+  if (history.length > MAX_TELEMETRY_CHARS) history = history.slice(-MAX_TELEMETRY_CHARS) + "...[truncated]";
+
   const model = Netlify.env.get("GROQ_MODEL") || DEFAULT_MODEL;
 
   try {
@@ -88,7 +98,7 @@ export default async (request) => {
           { role: "system", content: SYSTEM_PROMPT },
           {
             role: "user",
-            content: `Question: ${message}\n\nCurrent device telemetry (JSON):\n${telemetry}`
+            content: `Question: ${message}\n\nCurrent device telemetry (JSON):\n${telemetry}\n\nPersistent telemetry and prediction history (JSON, newest records):\n${history}`
           }
         ],
         temperature: 0.4,
@@ -109,6 +119,11 @@ export default async (request) => {
     }
     const assessment = parseAssessment(content);
     if (!assessment) return json({ error: "Groq did not return a complete structured assessment. Please try again." }, 502);
+    try {
+      await saveHistory({ predictions: [{ savedAt: new Date().toISOString(), question: message, reply: assessment.summary, predictions: assessment.features }] });
+    } catch (error) {
+      console.warn("Prediction could not be saved:", error?.message || error);
+    }
     return json({ reply: assessment.summary, predictions: assessment.features });
   } catch (error) {
     return json({ error: error?.message || "Unable to reach Groq." }, 502);
