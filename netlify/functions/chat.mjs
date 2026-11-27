@@ -39,13 +39,21 @@ function parseAssessment(content) {
   }
 }
 
+function getEnv(name) {
+  if (typeof Netlify !== "undefined" && Netlify?.env?.get) {
+    const val = Netlify.env.get(name);
+    if (val) return val;
+  }
+  return process.env[name];
+}
+
 export default async (request) => {
   if (request.method !== "POST") {
     return json({ error: "Method not allowed. Use POST." }, 405);
   }
 
   // Reads GROQ_API_KEY from .env (local) or Netlify environment variables (live).
-  const apiKey = Netlify.env.get("GROQ_API_KEY");
+  const apiKey = getEnv("GROQ_API_KEY");
   if (!apiKey) {
     return json({
       error: "GROQ_API_KEY is not set. Add it to .env for local testing, or to Netlify → Environment variables and redeploy."
@@ -83,7 +91,7 @@ export default async (request) => {
   }
   if (history.length > MAX_TELEMETRY_CHARS) history = history.slice(-MAX_TELEMETRY_CHARS) + "...[truncated]";
 
-  const model = Netlify.env.get("GROQ_MODEL") || DEFAULT_MODEL;
+  const model = getEnv("GROQ_MODEL") || DEFAULT_MODEL;
 
   try {
     const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -102,7 +110,7 @@ export default async (request) => {
           }
         ],
         temperature: 0.4,
-        max_completion_tokens: 1200
+        max_completion_tokens: 2400
       })
     });
 

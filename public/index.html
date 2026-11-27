@@ -410,47 +410,60 @@
 
   let mqttClient = null, lastTelemetryAt = 0, packetCount = 0, toastTimer = null, selectedMode = "auto", latestTelemetry = null;
   const batteryHistory = [];
-  const STORAGE_KEYS = Object.freeze({ telemetry: "solar-ai.telemetry.v1", predictions: "solar-ai.predictions.v1" });
+  let storedTelemetry = [];
+  let storedPredictions = [];
+  let dbRecordCount = 0;
 
-  function readStored(key) {
-    try { const value = JSON.parse(localStorage.getItem(key) || "[]"); return Array.isArray(value) ? value : []; }
-    catch { return []; }
+  function updateStoredRecordCount(label) {
+    setText("storedRecordCount", label || (dbRecordCount ? `PostgreSQL: ${dbRecordCount} records` : "PostgreSQL ready"));
   }
-  let storedTelemetry = readStored(STORAGE_KEYS.telemetry);
-  let storedPredictions = readStored(STORAGE_KEYS.predictions);
-
-  function writeStored(key, value) {
-    try { localStorage.setItem(key, JSON.stringify(value)); }
-    catch (error) { addLog(`Local storage unavailable: ${error.message}`, "warn"); }
-  }
-  function updateStoredRecordCount() {
-    setText("storedRecordCount", "Saving permanent history");
+  async function loadHistoryFromDb() {
+    try {
+      const response = await fetch(`${window.SOLAR_AI_HISTORY_API}?telemetryLimit=48&predictionLimit=12`);
+      if (!response.ok) throw new Error("PostgreSQL history fetch failed.");
+      const data = await response.json();
+      if (Array.isArray(data.telemetryHistory)) storedTelemetry = data.telemetryHistory;
+      if (Array.isArray(data.predictionHistory)) storedPredictions = data.predictionHistory;
+      dbRecordCount = Number(data?.counts?.total ?? (storedTelemetry.length + storedPredictions.length));
+      updateStoredRecordCount();
+      if (storedPredictions.length) {
+        const lastPred = storedPredictions[storedPredictions.length - 1];
+        if (Array.isArray(lastPred.predictions) && typeof applyGroqPredictions === "function") {
+          applyGroqPredictions(lastPred.predictions);
+        }
+        if (lastPred.reply) setText("aiReport", lastPred.reply);
+      }
+    } catch (error) {
+      updateStoredRecordCount("PostgreSQL unavailable");
+      addLog(`PostgreSQL load failed: ${error.message}`, "warn");
+    }
   }
   async function persistHistory(payload) {
     try {
       const response = await fetch(window.SOLAR_AI_HISTORY_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      if (!response.ok) throw new Error("History storage request failed.");
-      setText("storedRecordCount", "Permanent history active");
+      if (!response.ok) throw new Error("PostgreSQL save failed.");
+      const data = await response.json().catch(() => ({}));
+      if (data?.counts?.total !== undefined) dbRecordCount = Number(data.counts.total);
+      else dbRecordCount += (payload.telemetry?.length || 0) + (payload.predictions?.length || 0);
+      updateStoredRecordCount();
     } catch (error) {
-      setText("storedRecordCount", "Permanent history unavailable");
-      addLog(`History storage failed: ${error.message}`, "warn");
+      updateStoredRecordCount("PostgreSQL unavailable");
+      addLog(`PostgreSQL save failed: ${error.message}`, "warn");
     }
   }
   function storeTelemetrySnapshot(telemetry) {
     const record = { savedAt: new Date().toISOString(), device: telemetry };
     storedTelemetry.push(record);
     while (storedTelemetry.length > 120) storedTelemetry.shift();
-    writeStored(STORAGE_KEYS.telemetry, storedTelemetry); updateStoredRecordCount();
+    updateStoredRecordCount("Saving to PostgreSQL…");
     void persistHistory({ telemetry: [record] });
   }
-  function storePrediction(question, reply) {
-    const record = { savedAt: new Date().toISOString(), question, reply };
+  function storePrediction(question, reply, predictions) {
+    const record = { savedAt: new Date().toISOString(), question, reply, predictions };
     storedPredictions.push(record);
     while (storedPredictions.length > 30) storedPredictions.shift();
-    writeStored(STORAGE_KEYS.predictions, storedPredictions); updateStoredRecordCount();
-  }
-  if (storedTelemetry.length || storedPredictions.length) {
-    void persistHistory({ telemetry: storedTelemetry, predictions: storedPredictions });
+    dbRecordCount += 1;
+    updateStoredRecordCount();
   }
 
   function addLog(message, type = "info") {
@@ -756,7 +769,7 @@
     if (!latestTelemetry) { showToast("No telemetry has arrived yet.", "error"); return; }
     const question = $("aiQuestion").value.trim() || "Create a prediction for all eight intelligent-lighting capabilities. Mark unavailable inputs as insufficient data and do not invent readings.";
     button.disabled = true; button.textContent = "Generating prediction…";
-    report.textContent = "Sending live telemetry and local history to the AI endpoint…";
+    report.textContent = "Sending live telemetry and PostgreSQL history to the AI endpoint…";
     try {
       const response = await fetch(window.SOLAR_AI_CHAT_API, { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: question, context: {
@@ -769,7 +782,7 @@
       if (!response.ok) throw new Error(body.error || body.message || `HTTP ${response.status}`);
       const answer = body.reply || body.response || body.message || body.content || body.output || body.text;
       if (typeof answer !== "string" || !answer.trim()) throw new Error("No recognizable text in the response.");
-      report.textContent = answer; applyGroqPredictions(body.predictions); storePrediction(question, answer); addLog("AI predictive assessment received.");
+      report.textContent = answer; applyGroqPredictions(body.predictions); storePrediction(question, answer, body.predictions); addLog("AI predictive assessment saved to PostgreSQL.");
     } catch (error) {
       report.textContent = `AI request failed: ${error.message}`;
       addLog(`AI assistant error: ${error.message}`, "error");
@@ -794,6 +807,7 @@
   setText("controlTopicLabel", MQTT_CONFIG.controlTopic);
   updateStoredRecordCount();
   updateControls();
+  void loadHistoryFromDb();
   connectMqtt();
 </script>
 </body>

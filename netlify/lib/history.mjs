@@ -1,47 +1,168 @@
-import { getStore } from "@netlify/blobs";
+import { neon } from "@neondatabase/serverless";
 
-const STORE_NAME = "solar-ai-history";
 const MAX_TELEMETRY_BATCH = 250;
 const MAX_PREDICTION_BATCH = 100;
 
-function store() { return getStore(STORE_NAME); }
+let schemaReadyPromise = null;
 
-function safePart(value, fallback) {
-  const cleaned = String(value || fallback).replace(/[^a-zA-Z0-9._-]/g, "_");
-  return cleaned.slice(0, 100) || fallback;
+function getEnv(name) {
+  if (typeof Netlify !== "undefined" && Netlify?.env?.get) {
+    const val = Netlify.env.get(name);
+    if (val) return val;
+  }
+  return process.env[name];
 }
 
-function recordKey(type, record, index) {
-  const timestamp = new Date(record?.savedAt || Date.now()).toISOString();
-  const device = safePart(record?.device?.device || record?.deviceId, "device01");
-  return `${type}/${device}/${safePart(`${timestamp}-${index}`, String(index))}`;
+function getSql() {
+  const databaseUrl = getEnv("DATABASE_URL");
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is not configured in environment variables.");
+  }
+  return neon(databaseUrl);
 }
 
-function validRecord(record) { return record && typeof record === "object" && !Array.isArray(record); }
+async function ensureSchema(sql) {
+  if (!schemaReadyPromise) {
+    schemaReadyPromise = (async () => {
+      await sql`
+        CREATE TABLE IF NOT EXISTS telemetry_records (
+          id BIGSERIAL PRIMARY KEY,
+          device_id TEXT NOT NULL DEFAULT 'device01',
+          saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          payload JSONB NOT NULL
+        )
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS idx_telemetry_device_saved
+        ON telemetry_records (device_id, saved_at DESC, id DESC)
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS prediction_records (
+          id BIGSERIAL PRIMARY KEY,
+          device_id TEXT NOT NULL DEFAULT 'device01',
+          saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          question TEXT NOT NULL,
+          reply TEXT NOT NULL,
+          predictions JSONB,
+          payload JSONB
+        )
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS idx_prediction_saved
+        ON prediction_records (saved_at DESC, id DESC)
+      `;
+    })().catch((err) => {
+      schemaReadyPromise = null;
+      throw err;
+    });
+  }
+  await schemaReadyPromise;
+}
+
+function validRecord(record) {
+  return record && typeof record === "object" && !Array.isArray(record);
+}
+
+function toIsoTimestamp(value) {
+  const date = value ? new Date(value) : new Date();
+  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+}
+
+function extractDeviceId(record) {
+  const raw = record?.device?.device || record?.deviceId || record?.device_id || "device01";
+  return String(raw).slice(0, 100) || "device01";
+}
+
+export async function getHistoryCounts() {
+  const sql = getSql();
+  await ensureSchema(sql);
+  const [telemetryCount] = await sql`SELECT COUNT(*)::int AS count FROM telemetry_records`;
+  const [predictionCount] = await sql`SELECT COUNT(*)::int AS count FROM prediction_records`;
+  return {
+    telemetry: telemetryCount?.count ?? 0,
+    predictions: predictionCount?.count ?? 0,
+    total: (telemetryCount?.count ?? 0) + (predictionCount?.count ?? 0)
+  };
+}
 
 export async function saveHistory({ telemetry = [], predictions = [] }) {
+  const sql = getSql();
+  await ensureSchema(sql);
+
   const validTelemetry = telemetry.filter(validRecord).slice(0, MAX_TELEMETRY_BATCH);
   const validPredictions = predictions.filter(validRecord).slice(0, MAX_PREDICTION_BATCH);
-  const entries = [
-    ...validTelemetry.map((record, index) => ({ type: "telemetry", record, index })),
-    ...validPredictions.map((record, index) => ({ type: "predictions", record, index }))
-  ];
-  const historyStore = store();
-  await Promise.all(entries.map(({ type, record, index }) => historyStore.setJSON(recordKey(type, record, index), record)));
+
+  for (const record of validTelemetry) {
+    const deviceId = extractDeviceId(record);
+    const savedAt = toIsoTimestamp(record.savedAt);
+    const payload = JSON.stringify(record.device ?? record);
+    await sql`
+      INSERT INTO telemetry_records (device_id, saved_at, payload)
+      VALUES (${deviceId}, ${savedAt}::timestamptz, ${payload}::jsonb)
+    `;
+  }
+
+  for (const record of validPredictions) {
+    const deviceId = extractDeviceId(record);
+    const savedAt = toIsoTimestamp(record.savedAt);
+    const question = typeof record.question === "string" ? record.question : "";
+    const reply = typeof record.reply === "string" ? record.reply : "";
+    const predictionsJson = record.predictions ? JSON.stringify(record.predictions) : null;
+    const payloadJson = JSON.stringify(record);
+    await sql`
+      INSERT INTO prediction_records (device_id, saved_at, question, reply, predictions, payload)
+      VALUES (
+        ${deviceId},
+        ${savedAt}::timestamptz,
+        ${question},
+        ${reply},
+        ${predictionsJson}::jsonb,
+        ${payloadJson}::jsonb
+      )
+    `;
+  }
+
   return { telemetry: validTelemetry.length, predictions: validPredictions.length };
 }
 
-async function loadNewest(type, limit) {
-  const historyStore = store();
-  const { blobs } = await historyStore.list({ prefix: `${type}/` });
-  const newest = blobs.sort((a, b) => b.key.localeCompare(a.key)).slice(0, limit);
-  const records = await Promise.all(newest.map(blob => historyStore.get(blob.key, { type: "json" })));
-  return records.filter(validRecord).sort((a, b) => String(a.savedAt).localeCompare(String(b.savedAt)));
-}
-
 export async function loadRecentHistory({ telemetryLimit = 48, predictionLimit = 12 } = {}) {
-  const [telemetryHistory, predictionHistory] = await Promise.all([
-    loadNewest("telemetry", telemetryLimit), loadNewest("predictions", predictionLimit)
+  const sql = getSql();
+  await ensureSchema(sql);
+
+  const safeTelLimit = Math.max(1, Math.min(250, Number(telemetryLimit) || 48));
+  const safePredLimit = Math.max(1, Math.min(100, Number(predictionLimit) || 12));
+
+  const [telemetryRows, predictionRows, counts] = await Promise.all([
+    sql`
+      SELECT saved_at, payload
+      FROM telemetry_records
+      ORDER BY saved_at DESC, id DESC
+      LIMIT ${safeTelLimit}
+    `,
+    sql`
+      SELECT saved_at, question, reply, predictions
+      FROM prediction_records
+      ORDER BY saved_at DESC, id DESC
+      LIMIT ${safePredLimit}
+    `,
+    getHistoryCounts()
   ]);
-  return { telemetryHistory, predictionHistory };
+
+  const telemetryHistory = telemetryRows
+    .reverse()
+    .map((row) => ({
+      savedAt: new Date(row.saved_at).toISOString(),
+      device: row.payload?.device ?? row.payload
+    }));
+
+  const predictionHistory = predictionRows
+    .reverse()
+    .map((row) => ({
+      savedAt: new Date(row.saved_at).toISOString(),
+      question: row.question,
+      reply: row.reply,
+      predictions: row.predictions || undefined
+    }));
+
+  return { telemetryHistory, predictionHistory, counts };
 }
