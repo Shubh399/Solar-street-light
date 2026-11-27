@@ -1,2 +1,13 @@
 # Local Netlify folder
 .netlify
+
+# Local build/dev artifacts
+db/base/
+db/global/
+db/pg_*
+db/PG_VERSION
+db/postmaster.*
+db/postgresql*.conf
+functions/*.zip
+functions/manifest.json
+node_modules

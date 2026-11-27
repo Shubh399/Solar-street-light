@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="theme-color" content="#090d18"/>
+<title>Solar.AI · Smart Street Light</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+  :root{color-scheme:dark;--bg:#090d18;--surface:#101827;--border:rgba(154,174,207,.13);--text:#eef4ff;--muted:#8b9ab3;--soft:#b8c5d9;--cyan:#65d9ed;--blue:#739bff;--green:#4ed5a1;--amber:#f6c66b;--red:#ff7185;--shadow:0 18px 50px rgba(0,0,0,.22);--gap:clamp(10px,1.2vw,16px)}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:radial-gradient(900px 500px at 80% -20%,rgba(76,124,220,.13),transparent 60%),var(--bg);color:var(--text);font-family:"DM Sans",sans-serif;font-size:14px;overflow-x:hidden}
+  button,input,textarea{font:inherit;max-width:100%}
+  button{cursor:pointer}
+  code{font-size:11px}
+  .app{width:100%;max-width:1600px;margin:0 auto;padding:clamp(12px,2vw,28px)}
+  .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .between{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .muted{color:var(--muted)}
+  .small{font-size:10px}
+  .hide{display:none!important}
+
+  /* Top bar */
+  .topbar{justify-content:space-between;margin-bottom:22px}
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand-mark{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;color:#07151b;background:linear-gradient(135deg,#84f0dc,#70bbff);font-size:21px;font-weight:700}
+  .brand-name{font:700 20px "Space Grotesk",sans-serif;letter-spacing:-.6px}
+  .brand-sub{color:var(--muted);font-size:10px;letter-spacing:.1em;text-transform:uppercase}
+  .pill{display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:999px;padding:7px 12px;color:var(--soft);background:rgba(16,24,39,.76);font-size:12px;white-space:nowrap}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+  .dot.good{background:var(--green)}.dot.bad{background:var(--red)}.dot.warn{background:var(--amber)}
+
+  /* Hero */
+  .hero{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+  .eyebrow{color:var(--cyan);font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;margin-bottom:8px}
+  h1{font:600 clamp(26px,3vw,36px)/1.1 "Space Grotesk",sans-serif;letter-spacing:-1px;margin:0 0 6px}
+  .hero p{color:var(--muted);margin:0;font-size:13px}
+  .meta{display:flex;gap:8px;flex-wrap:wrap}
+  .meta-box{padding:9px 12px;border:1px solid var(--border);border-radius:12px;background:rgba(16,24,39,.72);min-width:120px}
+  .meta-label{display:block;color:var(--muted);font-size:10px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px}
+  .meta-value{font:600 13px "Space Grotesk",sans-serif}
+
+  /* Tabs */
+  .tabs{display:flex;gap:6px;margin-bottom:20px;padding:6px;border:1px solid var(--border);border-radius:14px;background:rgba(16,24,39,.72);width:fit-content;max-width:100%;flex-wrap:wrap}
+  .tab{border:1px solid transparent;background:transparent;color:var(--soft);border-radius:10px;padding:9px 16px;text-align:left}
+  .tab.active{background:linear-gradient(135deg,rgba(101,217,237,.13),rgba(115,155,255,.12));border-color:rgba(101,217,237,.24);color:var(--text)}
+  .page{display:none}.page.active{display:block}
+
+  /* Panels and grids */
+  .panel{min-width:0;border:1px solid var(--border);border-radius:16px;background:linear-gradient(145deg,rgba(19,29,46,.96),rgba(14,22,36,.96));box-shadow:var(--shadow);padding:clamp(13px,1.4vw,18px)}
+  .grid{display:grid;gap:var(--gap)}
+  .g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .main{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:var(--gap);align-items:start}
+  .stack{display:grid;gap:var(--gap);min-width:0;align-content:start}
+  .section-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .section-title{font:600 15px "Space Grotesk",sans-serif;margin:0}
+  .section-sub{color:var(--muted);font-size:11px;margin-top:3px}
+  .tag{color:var(--muted);border:1px solid var(--border);border-radius:7px;padding:4px 8px;font-size:10px;white-space:nowrap}
+  .feature-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--gap)}
+  .feature-card{min-width:0;padding:13px;border:1px solid rgba(101,217,237,.14);border-radius:12px;background:linear-gradient(145deg,rgba(101,217,237,.055),rgba(115,155,255,.025))}
+  .feature-num{color:var(--cyan);font:600 10px "Space Grotesk",sans-serif;letter-spacing:.1em}
+  .feature-card h3{margin:7px 0 5px;font:600 13px "Space Grotesk",sans-serif;line-height:1.3}
+  .feature-card p{margin:0;color:var(--muted);font-size:10px;line-height:1.5}
+  .feature-status{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:11px;padding-top:9px;border-top:1px solid rgba(255,255,255,.07);font-size:10px}
+  .feature-status span:first-child{color:var(--soft);font-weight:600;overflow-wrap:anywhere}
+  .feature-alert{color:var(--green);font:600 9px "Space Grotesk",sans-serif;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
+  .feature-alert.warn{color:var(--amber)}.feature-alert.danger{color:var(--red)}.feature-alert.muted{color:var(--muted)}
+
+  /* Metric cards */
+  .metric{padding:16px;min-height:120px;position:relative;overflow:hidden}
+  .metric-label{color:var(--muted);font-size:12px}
+  .metric-value{font:600 26px "Space Grotesk",sans-serif;letter-spacing:-.6px;margin:12px 0 4px;overflow-wrap:anywhere}
+  .metric-foot{color:var(--muted);font-size:11px;overflow-wrap:anywhere}
+  .progress{height:5px;border-radius:20px;background:rgba(255,255,255,.07);overflow:hidden;margin-top:10px}
+  .progress>span,.bar-fill{display:block;height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,var(--cyan),var(--blue));transition:width .35s}
+
+  /* Sensor cards */
+  .sensor{padding:14px;border-radius:13px;border:1px solid var(--border);background:rgba(255,255,255,.025)}
+  .sensor-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .sensor-name{color:var(--soft);font-size:12px;font-weight:600}
+  .sensor-pin{color:var(--muted);font-size:10px}
+  .sensor-reading{font:600 22px "Space Grotesk",sans-serif}
+  .sensor-caption{color:var(--muted);font-size:10px;margin-top:2px}
+  .bar-track{height:5px;background:rgba(255,255,255,.07);border-radius:20px;margin-top:12px;overflow:hidden}
+
+  /* Info cells */
+  .info{background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.055);border-radius:12px;padding:12px;min-width:0}
+  .info .label{color:var(--muted);font-size:10px;margin-bottom:6px}
+  .info .value{font:600 17px "Space Grotesk",sans-serif;overflow-wrap:anywhere}
+  .info .unit{color:var(--muted);font:400 10px "DM Sans",sans-serif}
+
+  /* Controls */
+  .control{padding:13px 0;border-top:1px solid var(--border)}
+  .control:first-of-type{border-top:0;padding-top:0}
+  .control-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:9px}
+  .control-label{color:var(--soft);font-size:12px;font-weight:600}
+  .control-value{color:var(--cyan);font:600 12px "Space Grotesk",sans-serif}
+  .segmented{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .btn,.seg{border:1px solid var(--border);border-radius:10px;padding:9px 10px;color:var(--soft);background:rgba(255,255,255,.035);font-size:12px;font-weight:600;min-width:0;overflow-wrap:anywhere}
+  .btn:hover:not(:disabled),.seg:hover:not(:disabled){border-color:rgba(101,217,237,.45);color:var(--text)}
+  .seg.active,.btn.primary{color:#06171d;background:linear-gradient(135deg,#8de9da,#7cc7ff);border-color:transparent}
+  .btn.secondary{background:rgba(115,155,255,.1);border-color:rgba(115,155,255,.25);color:#b9ccff}
+  .btn:disabled,.seg:disabled{opacity:.38;cursor:not-allowed}
+  .btn-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+  input[type=range]{width:100%;accent-color:var(--cyan)}
+  .range-scale{display:flex;justify-content:space-between;color:var(--muted);font-size:10px;margin-top:4px}
+  .key-row{display:flex;gap:7px}
+  .text-input,.key-input{min-width:0;width:100%;border:1px solid var(--border);border-radius:9px;padding:10px;color:var(--text);background:rgba(0,0,0,.18);outline:none;font-size:12px}
+  .key-input{flex:1}
+  .subtle{border:1px solid var(--border);border-radius:9px;color:var(--soft);background:rgba(255,255,255,.035);padding:0 12px;font-size:11px}
+  .mini{color:var(--muted);font-size:10px;line-height:1.5;margin:9px 0 0}
+  .notice{border:1px solid rgba(246,198,107,.2);border-radius:12px;background:rgba(246,198,107,.055);color:#d9c28f;padding:10px 12px;font-size:11px;line-height:1.5;margin-top:12px}
+
+  /* Energy ring */
+  .energy{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+  .ring{width:104px;height:104px;flex:0 0 auto;position:relative;display:grid;place-items:center;border-radius:50%;background:conic-gradient(var(--cyan) 0deg,rgba(255,255,255,.08) 0deg)}
+  .ring:before{content:"";position:absolute;inset:8px;border-radius:50%;background:#121d2e}
+  .ring-content{position:relative;text-align:center}
+  .ring-number{font:600 20px "Space Grotesk",sans-serif}
+  .ring-caption{color:var(--muted);font-size:9px}
+  .detail-list{flex:1;display:grid;gap:9px;min-width:180px}
+  .detail{display:flex;justify-content:space-between;gap:10px;font-size:12px}
+  .detail span:first-child{color:var(--muted)}
+  .detail strong{color:var(--soft);font-weight:600;text-align:right}
+
+  /* Chart and log */
+  .chart{position:relative;height:180px}
+  .chart svg{width:100%;height:100%;overflow:visible}
+  .chart-grid{stroke:rgba(177,194,220,.1);stroke-dasharray:4 5}
+  .chart-axis{fill:#7f8da5;font-size:9px}
+  .chart-line{fill:none;stroke:#67d9e7;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+  .chart-area{fill:url(#chartFill);opacity:.22}
+  .empty{height:100%;display:grid;place-items:center;color:var(--muted);font-size:12px;text-align:center}
+  .log{max-height:240px;overflow:auto}
+  .log-item{display:grid;grid-template-columns:62px 7px minmax(0,1fr);gap:8px;padding:8px 0;border-top:1px solid rgba(255,255,255,.055)}
+  .log-item:first-child{border-top:0}
+  .log-time{color:var(--muted);font-size:10px;font-variant-numeric:tabular-nums}
+  .log-mark{width:6px;height:6px;border-radius:50%;background:var(--cyan);margin-top:4px}
+  .log-mark.warn{background:var(--amber)}.log-mark.error{background:var(--red)}
+  .log-message{color:var(--soft);font-size:11px;line-height:1.45;overflow-wrap:anywhere}
+
+  /* Connection */
+  .conn{display:grid;gap:9px}
+  .conn-line{display:flex;justify-content:space-between;gap:12px;font-size:12px}
+  .conn-line span:first-child{color:var(--muted)}
+  .conn-line strong{color:var(--soft);font-weight:600;text-align:right;overflow-wrap:anywhere}
+  .topic{color:#a9c2ff;font-size:10px;overflow-wrap:anywhere}
+  .online{color:var(--green)!important}.offline{color:var(--red)!important}.warn-text{color:var(--amber)!important}
+
+  /* AI report */
+  .ai-report{min-height:70px;color:var(--soft);font-size:12px;line-height:1.6;white-space:pre-wrap;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.055);border-radius:12px;padding:12px;margin-top:10px;overflow-wrap:anywhere}
+
+  .toast{position:fixed;right:20px;bottom:20px;z-index:20;max-width:min(360px,calc(100vw - 30px));padding:12px 15px;border:1px solid var(--border);border-radius:12px;background:#17243a;box-shadow:var(--shadow);font-size:12px;opacity:0;transform:translateY(12px);pointer-events:none;transition:.2s}
+  .toast.show{opacity:1;transform:none}
+  .footer{color:#62718a;font-size:10px;text-align:center;margin-top:24px}
+
+  @media(max-width:1100px){.main{grid-template-columns:1fr}.g4,.feature-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(max-width:700px){.g3,.g2{grid-template-columns:1fr}.g4{grid-template-columns:repeat(2,minmax(0,1fr))}.metric-value{font-size:22px}}
+  @media(max-width:420px){.g4{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+
+<header class="topbar between">
+  <div class="brand"><div class="brand-mark">☼</div><div><div class="brand-name">Solar.AI</div><div class="brand-sub">Intelligent street lighting</div></div></div>
+  <div class="row">
+    <div class="pill"><span class="dot" id="brokerDot"></span><span id="brokerStatus">Connecting broker</span></div>
+    <div class="pill"><span class="dot" id="deviceDot"></span><span id="deviceStatus">Waiting for device</span></div>
+    <div class="pill">ESP32 · <strong>device01</strong></div>
+  </div>
+</header>
+
+<section class="hero">
+  <div>
+    <div class="eyebrow">Live monitoring / device 01</div>
+    <h1>Smart Street Light Dashboard</h1>
+    <p>Adaptive illumination, solar tracking and motion-triggered boost.</p>
+  </div>
+  <div class="meta">
+    <div class="meta-box"><span class="meta-label">Last update</span><span class="meta-value" id="lastUpdate">Waiting for data</span></div>
+    <div class="meta-box"><span class="meta-label">Operating mode</span><span class="meta-value" id="modeValue">—</span></div>
+    <div class="meta-box"><span class="meta-label">Ambient state</span><span class="meta-value" id="dayStateValue">—</span></div>
+  </div>
+</section>
+
+<nav class="tabs" role="tablist">
+  <button class="tab active" data-page="overview" role="tab">Overview<br><span class="small muted">Live status &amp; controls</span></button>
+  <button class="tab" data-page="details" role="tab">Details<br><span class="small muted">Sensors, motion &amp; tracking</span></button>
+</nav>
+
+<!-- ===================== OVERVIEW PAGE ===================== -->
+<section class="page active" id="page-overview">
+  <div class="grid g4" style="margin-bottom:var(--gap)">
+    <article class="panel metric">
+      <div class="between"><span class="metric-label">Battery voltage</span></div>
+      <div class="metric-value" id="batteryVoltage">—<small class="muted"> V</small></div>
+      <div class="metric-foot" id="batteryFoot">Waiting for battery telemetry</div>
+      <div class="progress"><span id="batteryProgress"></span></div>
+    </article>
+    <article class="panel metric">
+      <div class="between"><span class="metric-label">Battery charge (est.)</span></div>
+      <div class="metric-value" id="batterySoc">—<small class="muted"> %</small></div>
+      <div class="metric-foot" id="batterySocFoot">1S Li-ion profile</div>
+      <div class="progress"><span id="socProgress"></span></div>
+    </article>
+    <article class="panel metric">
+      <div class="between"><span class="metric-label">Detected distance</span></div>
+      <div class="metric-value" id="distanceValue">—<small class="muted"> cm</small></div>
+      <div class="metric-foot" id="motionFoot">Ultrasonic sensor · GPIO5 / 19</div>
+    </article>
+    <article class="panel metric">
+      <div class="between"><span class="metric-label">LED output</span></div>
+      <div class="metric-value" id="ledOutput">—<small class="muted"> %</small></div>
+      <div class="metric-foot" id="ledFoot">Average of LED channels 1–3</div>
+      <div class="progress"><span id="ledProgress"></span></div>
+    </article>
+  </div>
+
+  <section class="panel" style="margin-bottom:var(--gap)">
+    <div class="section-head"><div><h2 class="section-title">Intelligent lighting capabilities</h2><div class="section-sub">Groq analyzes live ESP32 telemetry and returns a separate assessment for every capability.</div></div><span class="tag" id="storedRecordCount">0 local records</span></div>
+    <div class="feature-grid">
+      <article class="feature-card"><div class="feature-num">01 · CORE</div><h3>Traffic-aware illumination</h3><p>Smooth PWM prediction from 15% idle to 100% active using distance telemetry.</p><div class="feature-status"><span id="trafficPrediction">Awaiting live AI assessment</span><span class="feature-alert muted" id="trafficAlert">No telemetry</span></div></article>
+      <article class="feature-card"><div class="feature-num">02 · CORE</div><h3>Day/night hysteresis</h3><p>Schmitt-trigger analysis helps avoid LDR switching from headlights and clouds.</p><div class="feature-status"><span id="hysteresisPrediction">Awaiting live AI assessment</span><span class="feature-alert muted" id="hysteresisAlert">No telemetry</span></div></article>
+      <article class="feature-card"><div class="feature-num">03 · CORE</div><h3>Servo power management</h3><p>Reports zero-hold-power behavior after the SG90 completes a movement.</p><div class="feature-status"><span id="servoPrediction">Awaiting live AI assessment</span><span class="feature-alert muted" id="servoAlert">No telemetry</span></div></article>
+      <article class="feature-card"><div class="feature-num">04 · IOT</div><h3>Cloud telemetry &amp; override</h3><p>Tracks battery, light and remote MQTT control state in real time.</p><div class="feature-status"><span id="cloudPrediction">Awaiting live AI assessment</span><span class="feature-alert muted" id="cloudAlert">No telemetry</span></div></article>
+      <article class="feature-card"><div class="feature-num">05 · EDGE AI</div><h3>Motion-profile classifier</h3><p>Groq estimates pedestrian, fast vehicle or noise from supplied motion history.</p><div class="feature-status"><span id="motionPrediction">Awaiting live AI assessment</span><span class="feature-alert muted" id="motionAlert">No telemetry</span></div></article>
+      <article class="feature-card"><div class="feature-num">06 · ML</div><h3>Battery energy budget</h3><p>Predicts overnight energy risk and a conservative peak-brightness cap.</p><div class="feature-status"><span id="batteryPrediction">Awaiting live AI assessment</span><span class="feature-alert muted" id="batteryAlert">No telemetry</span></div></article>
+      <article class="feature-card"><div class="feature-num">07 · AI DIAGNOSTIC</div><h3>Panel soiling anomaly</h3><p>Compares irradiance proxies and charging data for possible soiling or degradation.</p><div class="feature-status"><span id="soilingPrediction">Awaiting live AI assessment</span><span class="feature-alert muted" id="soilingAlert">No telemetry</span></div></article>
+      <article class="feature-card"><div class="feature-num">08 · OPTIMIZER</div><h3>Adaptive sun-seeking</h3><p>Suggests a servo-tilt direction from LDR balance under non-ideal shading.</p><div class="feature-status"><span id="trackingPrediction">Awaiting live AI assessment</span><span class="feature-alert muted" id="trackingAlert">No telemetry</span></div></article>
+    </div>
+    <p class="mini">Predictions are AI inferences over available telemetry, not evidence that the listed edge models are deployed on the ESP32.</p>
+  </section>
+
+  <div class="main">
+    <div class="stack">
+      <section class="panel">
+        <div class="section-head">
+          <div><h2 class="section-title">Energy &amp; lighting</h2><div class="section-sub">Battery protection cap and current LED levels</div></div>
+          <span class="tag" id="batteryValidity">Battery: unknown</span>
+        </div>
+        <div class="energy">
+          <div class="ring" id="energyRing"><div class="ring-content"><div class="ring-number" id="energyRingValue">—%</div><div class="ring-caption">BATTERY</div></div></div>
+          <div class="detail-list">
+            <div class="detail"><span>Battery energy cap</span><strong id="energyCap">—%</strong></div>
+            <div class="detail"><span>Requested light output</span><strong id="targetOutput">—%</strong></div>
+            <div class="detail"><span>LED channel 1 / GPIO23</span><strong id="led1Value">—%</strong></div>
+            <div class="detail"><span>LED channel 2 / GPIO22</span><strong id="led2Value">—%</strong></div>
+            <div class="detail"><span>LED channel 3 / GPIO21</span><strong id="led3Value">—%</strong></div>
+          </div>
+        </div>
+        <p class="mini">Battery state of charge is an estimate from the firmware's voltage curve, not a coulomb count.</p>
+      </section>
+
+      <section class="panel">
+        <div class="section-head"><div><h2 class="section-title">Motion detection</h2><div class="section-sub">HC-SR04 proximity activity</div></div><span class="tag" id="motionBadge">—</span></div>
+        <div class="grid g2">
+          <div class="info"><div class="label">Detection events</div><div class="value" id="motionEvents">—</div></div>
+          <div class="info"><div class="label">Boost hold</div><div class="value" id="holdSeconds">—<span class="unit"> s</span></div></div>
+          <div class="info"><div class="label">Trigger range</div><div class="value" id="triggerRange">—<span class="unit"> cm</span></div></div>
+          <div class="info"><div class="label">Sensor timeouts</div><div class="value" id="sonarTimeouts">—</div></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="stack">
+      <section class="panel">
+        <div class="section-head"><div><h2 class="section-title">Quick controls</h2><div class="section-sub">Lighting commands sent over MQTT</div></div><span class="tag" id="controlState">Not connected</span></div>
+        <div class="control">
+          <div class="control-row"><span class="control-label">Lighting mode</span><span class="control-value" id="selectedMode">AUTO</span></div>
+          <div class="segmented">
+            <button class="seg active" data-mode="auto" disabled>Auto</button>
+            <button class="seg" data-mode="on" disabled>Always ON</button>
+            <button class="seg" data-mode="off" disabled>OFF</button>
+          </div>
+        </div>
+        <div class="control">
+          <div class="control-row"><label class="control-label" for="brightnessRange">Brightness override</label><span class="control-value" id="brightnessValue">40%</span></div>
+          <input id="brightnessRange" type="range" min="0" max="100" step="1" value="40" disabled/>
+          <div class="range-scale"><span>0%</span><span>100%</span></div>
+          <p class="mini">Sends <code>dim</code>. Choose Auto to return to sensor-driven operation.</p>
+        </div>
+        <div class="control">
+          <div class="control-row"><span class="control-label">Command key</span><span class="tag">Required</span></div>
+          <div class="key-row">
+            <input id="commandKey" class="key-input" type="password" placeholder="Enter MQTT_COMMAND_KEY" autocomplete="off" spellcheck="false"/>
+            <button id="toggleKeyBtn" class="subtle" type="button">Show</button>
+          </div>
+          <p class="mini">Must exactly match <code>MQTT_COMMAND_KEY</code> in the ESP32 sketch.</p>
+        </div>
+      </section>
+
+      <section class="panel conn">
+        <div class="section-head" style="margin-bottom:4px"><div><h2 class="section-title">Connection</h2><div class="section-sub">Dashboard ↔ broker ↔ ESP32</div></div></div>
+        <div class="conn-line"><span>Broker</span><strong>broker.emqx.io</strong></div>
+        <div class="conn-line"><span>Transport</span><strong>Secure WebSocket · 8084</strong></div>
+        <div class="conn-line"><span>Device</span><strong>device01</strong></div>
+        <div class="conn-line"><span>Wi-Fi RSSI</span><strong id="wifiRssi">—</strong></div>
+        <div class="conn-line"><span>Uptime</span><strong id="uptimeValue">—</strong></div>
+        <div class="conn-line"><span>Device status</span><strong id="deviceStatusDetail">Waiting</strong></div>
+        <div class="conn-line"><span>Telemetry packets</span><strong id="packetCount">0</strong></div>
+        <div><div class="control-label">Telemetry topic</div><div class="topic" id="telemetryTopicLabel"></div></div>
+        <div><div class="control-label">Control topic</div><div class="topic" id="controlTopicLabel"></div></div>
+      </section>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== DETAILS PAGE ===================== -->
+<section class="page" id="page-details">
+  <div class="main">
+    <div class="stack">
+      <section class="panel">
+        <div class="section-head"><div><h2 class="section-title">Sensor telemetry</h2><div class="section-sub">Raw ADC readings from the ESP32 (0–4095)</div></div><span class="tag">ADC 12-bit</span></div>
+        <div class="grid g3">
+          <div class="sensor"><div class="sensor-head"><span class="sensor-name">East LDR</span><span class="sensor-pin" id="eastPin">GPIO35</span></div>
+            <div class="sensor-reading" id="eastLdr">—</div><div class="sensor-caption" id="eastLdrCaption">Filtered: —</div>
+            <div class="bar-track"><div class="bar-fill" id="eastBar"></div></div></div>
+          <div class="sensor"><div class="sensor-head"><span class="sensor-name">West LDR</span><span class="sensor-pin" id="westPin">GPIO34</span></div>
+            <div class="sensor-reading" id="westLdr">—</div><div class="sensor-caption" id="westLdrCaption">Filtered: —</div>
+            <div class="bar-track"><div class="bar-fill" id="westBar"></div></div></div>
+          <div class="sensor"><div class="sensor-head"><span class="sensor-name">Ambient LDR</span><span class="sensor-pin">GPIO39</span></div>
+            <div class="sensor-reading" id="ambientLdr">—</div><div class="sensor-caption" id="ambientLdrCaption">ADC full-scale: —%</div>
+            <div class="bar-track"><div class="bar-fill" id="ambientBar"></div></div></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head"><div><h2 class="section-title">Battery voltage history</h2><div class="section-sub">Recent valid readings received by this browser</div></div><span class="tag">Last 20 samples</span></div>
+        <div class="chart" id="batteryChart"><div class="empty">Chart will appear when valid battery readings arrive.</div></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head"><div><h2 class="section-title">Device activity</h2><div class="section-sub">Connection, telemetry and command log</div></div><span class="tag">Live log</span></div>
+        <div class="log" id="activityLog"><div class="log-item"><span class="log-time">—</span><span class="log-mark"></span><span class="log-message">Dashboard started. Waiting for MQTT telemetry.</span></div></div>
+      </section>
+    </div>
+
+    <div class="stack">
+      <section class="panel">
+        <div class="section-head"><div><h2 class="section-title">Solar tracking</h2><div class="section-sub">Dual-LDR tracker status and servo control</div></div><span class="tag" id="trackingBadge">—</span></div>
+        <div class="grid g2">
+          <div class="info"><div class="label">Servo angle (commanded)</div><div class="value" id="servoAngle">—<span class="unit"> °</span></div></div>
+          <div class="info"><div class="label">Tracking moves</div><div class="value" id="trackingMoves">—</div></div>
+          <div class="info"><div class="label">Tracking target</div><div class="value" style="font-size:13px" id="trackingTarget">—</div></div>
+          <div class="info"><div class="label">Servo movement</div><div class="value" style="font-size:13px" id="servoMoving">—</div></div>
+        </div>
+        <div class="control" style="margin-top:14px">
+          <div class="control-row"><label class="control-label" for="servoRange">Servo position</label><span class="control-value" id="servoRangeValue">90°</span></div>
+          <input id="servoRange" type="range" min="30" max="150" step="1" value="90" disabled/>
+          <div class="range-scale"><span>30°</span><span>90°</span><span>150°</span></div>
+          <div class="btn-row">
+            <button class="btn secondary" id="setServoBtn" disabled>Set position</button>
+            <button class="btn primary" id="trackBtn" disabled>Resume tracking</button>
+          </div>
+        </div>
+        <p class="mini">The firmware reports the commanded angle, not measured servo feedback.</p>
+      </section>
+
+      <section class="panel">
+        <div class="section-head"><div><h2 class="section-title">Solar.AI predictive assistant</h2><div class="section-sub">Groq assessment of the eight dashboard capabilities</div></div><span class="tag">Server API</span></div>
+        <textarea id="aiQuestion" class="text-input" rows="3" placeholder="Example: Predict battery risk and classify the current motion profile..."></textarea>
+        <button id="askAiBtn" class="btn primary" style="width:100%;margin-top:9px">Generate predictive assessment</button>
+        <div class="ai-report" id="aiReport" aria-live="polite">A Groq prediction will appear here after telemetry arrives.</div>
+        <p class="mini">The API key stays on the server. Telemetry and generated assessments are saved only in this browser; the assistant does not control the device.</p>
+      </section>
+
+      <div class="notice">Public MQTT brokers are for prototypes. Anyone who knows the topic names can observe messages. Do not send safety-critical commands or private data through them.</div>
+    </div>
+  </div>
+</section>
+
+<div class="footer">Solar.AI · ESP32 DevKit V1 · Values are shown only when reported by the device over MQTT.</div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+  // ---------- Page navigation ----------
+  document.querySelectorAll(".tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t === tab));
+      document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + tab.dataset.page));
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  });
+
+  // ---------- Configuration (must match the ESP32 sketch) ----------
+  const MQTT_CONFIG = Object.freeze({
+    url: "wss://broker.emqx.io:8084/mqtt",
+    telemetryTopic: "solarStreetLight/device01/telemetry",
+    controlTopic: "solarStreetLight/device01/control",
+    expectedDeviceId: "device01",
+    telemetryTimeoutMs: 9000
+  });
+  window.SOLAR_AI_CHAT_API = window.SOLAR_AI_CHAT_API || "/api/chat";
+
+  const $ = id => document.getElementById(id);
+  const setText = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  const setProgress = (id, value, max = 100) => { const el = $(id); if (el) el.style.width = `${Math.max(0, Math.min(100, (Number(value) || 0) / max * 100))}%`; };
+  const fin = v => { const n = Number(v); return v !== null && v !== undefined && v !== "" && Number.isFinite(n) ? n : null; };
+  const fix = (v, d = 0) => v === null ? "—" : v.toFixed(d);
+
+  let mqttClient = null, lastTelemetryAt = 0, packetCount = 0, toastTimer = null, selectedMode = "auto", latestTelemetry = null;
+  const batteryHistory = [];
+  const STORAGE_KEYS = Object.freeze({ telemetry: "solar-ai.telemetry.v1", predictions: "solar-ai.predictions.v1" });
+
+  function readStored(key) {
+    try { const value = JSON.parse(localStorage.getItem(key) || "[]"); return Array.isArray(value) ? value : []; }
+    catch { return []; }
+  }
+  let storedTelemetry = readStored(STORAGE_KEYS.telemetry);
+  let storedPredictions = readStored(STORAGE_KEYS.predictions);
+
+  function writeStored(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); }
+    catch (error) { addLog(`Local storage unavailable: ${error.message}`, "warn"); }
+  }
+  function updateStoredRecordCount() {
+    setText("storedRecordCount", `${storedTelemetry.length + storedPredictions.length} local records`);
+  }
+  function storeTelemetrySnapshot(telemetry) {
+    storedTelemetry.push({ savedAt: new Date().toISOString(), device: telemetry });
+    while (storedTelemetry.length > 120) storedTelemetry.shift();
+    writeStored(STORAGE_KEYS.telemetry, storedTelemetry); updateStoredRecordCount();
+  }
+  function storePrediction(question, reply) {
+    storedPredictions.push({ savedAt: new Date().toISOString(), question, reply });
+    while (storedPredictions.length > 30) storedPredictions.shift();
+    writeStored(STORAGE_KEYS.predictions, storedPredictions); updateStoredRecordCount();
+  }
+
+  function addLog(message, type = "info") {
+    const log = $("activityLog");
+    const first = log.querySelector(".log-item");
+    if (first && first.textContent.includes("Dashboard started")) log.innerHTML = "";
+    const item = document.createElement("div"); item.className = "log-item";
+    const time = document.createElement("span"); time.className = "log-time";
+    time.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const mark = document.createElement("span"); mark.className = "log-mark" + (type === "warn" ? " warn" : type === "error" ? " error" : "");
+    const text = document.createElement("span"); text.className = "log-message"; text.textContent = String(message);
+    item.append(time, mark, text); log.prepend(item);
+    while (log.children.length > 18) log.removeChild(log.lastElementChild);
+  }
+
+  function showToast(message, type = "info") {
+    const t = $("toast"); t.textContent = message;
+    t.style.borderColor = type === "error" ? "rgba(255,113,133,.35)" : type === "success" ? "rgba(78,213,161,.35)" : "var(--border)";
+    t.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 3000);
+  }
+
+  function setBrokerState(connected, detail = "") {
+    $("brokerDot").className = "dot " + (connected ? "good" : "bad");
+    setText("brokerStatus", connected ? "Broker connected" : "Broker disconnected");
+    setText("controlState", connected ? "Broker ready" : "Not connected");
+    updateControls();
+    if (detail) addLog(detail, connected ? "info" : "warn");
+  }
+
+  function updateControls() {
+    const ready = Boolean(mqttClient && mqttClient.connected);
+    document.querySelectorAll("[data-mode]").forEach(b => b.disabled = !ready);
+    ["brightnessRange", "servoRange", "setServoBtn", "trackBtn"].forEach(id => { const el = $(id); if (el) el.disabled = !ready; });
+  }
+
+  // ---------- Telemetry parsing (field names exactly as the sketch publishes them) ----------
+  function parseTelemetry(data) {
+    if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Telemetry payload must be a JSON object.");
+    const device = String(data.device || MQTT_CONFIG.expectedDeviceId);
+    if (device !== MQTT_CONFIG.expectedDeviceId) throw new Error(`Ignored device '${device}'.`);
+    const b = data.battery || {}, l = data.ldr || {}, li = data.light || {}, m = data.motion || {}, s = data.servo || {}, n = data.network || {};
+    return {
+      mode: String(data.mode || "unknown").toLowerCase(),
+      status: data.status || "online",
+      uptimeMs: fin(data.uptime_ms),
+      wifiRssi: fin(data.wifi_rssi_dbm),
+      wifiConnected: n.wifi_connected === true,
+      battery: { gpio: fin(b.gpio), valid: b.sensor_valid === true, profile: b.profile_valid === true,
+                 voltage: fin(b.voltage), soc: fin(b.soc), cap: fin(b.cap_percent),
+                 raw: fin(b.adc_raw), pinMv: fin(b.adc_pin_mv) },
+      ldr: { east: fin(l.east), west: fin(l.west), eastF: fin(l.east_filtered), westF: fin(l.west_filtered),
+             ambient: fin(l.ambient), ambientF: fin(l.ambient_filtered), ambientPct: fin(l.ambient_adc_percent) },
+      light: { day: typeof li.day === "boolean" ? li.day : null, target: fin(li.target_percent),
+               led1: fin(li.led1), led2: fin(li.led2), led3: fin(li.led3) },
+      motion: { distance: fin(m.distance_cm), valid: m.distance_valid === true, detected: m.detected === true,
+                hold: fin(m.hold_seconds), events: fin(m.events), trigger: fin(m.trigger_cm), timeouts: fin(m.timeout_count) },
+      servo: { angle: fin(s.angle), tracking: s.tracking === true, moving: s.moving === true,
+               target: s.target ?? "—", moves: fin(s.moves) }
+    };
+  }
+
+  function updateRing(percent) {
+    const ring = $("energyRing");
+    if (percent === null) { ring.style.background = "conic-gradient(rgba(255,255,255,.08) 0deg,rgba(255,255,255,.08) 360deg)"; setText("energyRingValue", "—%"); return; }
+    const p = Math.max(0, Math.min(100, percent));
+    ring.style.background = `conic-gradient(var(--cyan) ${p * 3.6}deg,rgba(255,255,255,.08) 0deg)`;
+    setText("energyRingValue", `${Math.round(p)}%`);
+  }
+
+  function setFeatureAlert(id, text, state = "muted") {
+    setText(id, text);
+    const el = $(id);
+    if (el) el.className = `feature-alert ${state}`;
+  }
+
+  function applyGroqPredictions(predictions) {
+    if (!Array.isArray(predictions)) return;
+    const cardIds = new Set(["traffic", "hysteresis", "servo", "cloud", "motion", "battery", "soiling", "tracking"]);
+    predictions.forEach(prediction => {
+      if (!prediction || !cardIds.has(prediction.id)) return;
+      const value = typeof prediction.value === "string" && prediction.value.trim() ? prediction.value.trim() : "Insufficient live data";
+      const alert = typeof prediction.alert === "string" && prediction.alert.trim() ? prediction.alert.trim() : "Needs review";
+      const level = ["", "warn", "danger", "muted"].includes(prediction.level) ? prediction.level : "muted";
+      setText(`${prediction.id}Prediction`, value);
+      setFeatureAlert(`${prediction.id}Alert`, alert, level);
+    });
+  }
+
+  function updateFeaturePredictions(t) {
+    const target = t.light.target;
+    setText("trafficPrediction", target === null ? "PWM target unavailable" : `Predicted PWM ${Math.round(target)}%`);
+    setFeatureAlert("trafficAlert", t.motion.detected ? "Boost active" : "Idle profile", t.motion.detected ? "warn" : "");
+
+    const ambient = t.ldr.ambientPct;
+    const nearThreshold = ambient !== null && ambient >= 40 && ambient <= 60;
+    setText("hysteresisPrediction", ambient === null ? "Ambient input unavailable" : `${Math.round(ambient)}% ambient · ${t.light.day ? "day" : "night"}`);
+    setFeatureAlert("hysteresisAlert", ambient === null ? "Needs LDR" : nearThreshold ? "Switch zone" : "Stable", ambient === null ? "muted" : nearThreshold ? "warn" : "");
+
+    setText("servoPrediction", t.servo.angle === null ? "Angle unavailable" : `${t.servo.angle}° commanded · ${t.servo.moving ? "moving" : "idle"}`);
+    setFeatureAlert("servoAlert", t.servo.angle === null ? "Needs servo" : t.servo.moving ? "Power active" : "Verify detach", t.servo.angle === null ? "muted" : t.servo.moving ? "warn" : "");
+
+    setText("cloudPrediction", t.wifiRssi === null ? "Wi-Fi signal unavailable" : `Wi-Fi ${t.wifiRssi} dBm · ${t.mode.toUpperCase()}`);
+    setFeatureAlert("cloudAlert", t.wifiConnected ? "Cloud online" : "Offline", t.wifiConnected ? "" : "danger");
+
+    const distance = t.motion.distance;
+    setText("motionPrediction", distance === null ? "Motion profile needs samples" : `${t.motion.detected ? "Object" : "Clear path"} · ${distance.toFixed(0)} cm`);
+    setFeatureAlert("motionAlert", distance === null ? "Needs profile" : t.motion.detected ? "Classify in Groq" : "No trigger", distance === null ? "muted" : t.motion.detected ? "warn" : "");
+
+    setText("batteryPrediction", t.battery.soc === null ? "Battery estimate unavailable" : `${Math.round(t.battery.soc)}% charge · cap ${t.battery.cap === null ? "—" : `${Math.round(t.battery.cap)}%`}`);
+    const lowBattery = t.battery.soc !== null && t.battery.soc < 30;
+    setFeatureAlert("batteryAlert", t.battery.soc === null ? "Needs battery" : lowBattery ? "Night risk" : "Budget OK", t.battery.soc === null ? "muted" : lowBattery ? "danger" : "");
+
+    setText("soilingPrediction", ambient === null || t.battery.voltage === null ? "Needs irradiance + charge baseline" : `Irradiance ref ${Math.round(ambient)}% · ${t.battery.voltage.toFixed(2)} V`);
+    setFeatureAlert("soilingAlert", ambient === null || t.battery.voltage === null ? "Baseline needed" : "Monitor trend", ambient === null || t.battery.voltage === null ? "muted" : "warn");
+
+    const east = t.ldr.eastF ?? t.ldr.east, west = t.ldr.westF ?? t.ldr.west;
+    const ldrDelta = east === null || west === null ? null : east - west;
+    setText("trackingPrediction", ldrDelta === null ? "LDR balance unavailable" : `LDR delta ${Math.round(ldrDelta > 0 ? ldrDelta : -ldrDelta)} ADC · ${ldrDelta > 20 ? "favor east" : ldrDelta < -20 ? "favor west" : "hold tilt"}`);
+    setFeatureAlert("trackingAlert", ldrDelta === null ? "Needs LDRs" : Math.abs(ldrDelta) > 20 ? "Tilt opportunity" : "Balanced", ldrDelta === null ? "muted" : Math.abs(ldrDelta) > 20 ? "warn" : "");
+  }
+
+  function renderTelemetry(t) {
+    latestTelemetry = t; lastTelemetryAt = Date.now(); packetCount++;
+    setText("packetCount", packetCount.toLocaleString());
+    setText("lastUpdate", new Date(lastTelemetryAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+
+    const online = t.status === "online" && t.wifiConnected;
+    $("deviceDot").className = "dot " + (online ? "good" : "warn");
+    setText("deviceStatus", online ? "Device online" : "Device reporting · check Wi-Fi");
+    setText("deviceStatusDetail", online ? "Online" : "Check Wi-Fi");
+    $("deviceStatusDetail").className = online ? "online" : "warn-text";
+
+    setText("modeValue", t.mode.toUpperCase());
+    setText("selectedMode", t.mode.toUpperCase());
+    if (["auto", "on", "off"].includes(t.mode)) selectedMode = t.mode;
+    document.querySelectorAll("[data-mode]").forEach(b => b.classList.toggle("active", b.dataset.mode === selectedMode));
+    setText("dayStateValue", t.light.day === null ? "—" : t.light.day ? "DAY" : "NIGHT");
+
+    // Battery
+    setText("batteryVoltage", t.battery.voltage === null ? "—" : `${t.battery.voltage.toFixed(2)} V`);
+    setText("batteryFoot", t.battery.valid ? `GPIO${t.battery.gpio ?? 32} · ADC ${fix(t.battery.raw)}` : "Sensor reading invalid");
+    setText("batterySoc", t.battery.soc === null ? "—" : `${t.battery.soc.toFixed(0)} %`);
+    setText("batterySocFoot", t.battery.profile ? "Valid 1S profile" : "Outside 1S profile");
+    setProgress("batteryProgress", t.battery.soc); setProgress("socProgress", t.battery.soc);
+    setText("batteryValidity", t.battery.profile ? "Battery profile valid" : "Battery profile unknown");
+    setText("energyCap", t.battery.cap === null ? "—%" : `${t.battery.cap.toFixed(0)}%`);
+    updateRing(t.battery.soc);
+
+    // LEDs
+    const leds = [t.light.led1, t.light.led2, t.light.led3].filter(v => v !== null);
+    const avg = leds.length ? leds.reduce((a, b) => a + b, 0) / leds.length : null;
+    setText("ledOutput", avg === null ? "—" : `${avg.toFixed(0)} %`);
+    setText("ledFoot", avg === null ? "Waiting for LED values" : `LED1 ${fix(t.light.led1)}% · LED2 ${fix(t.light.led2)}% · LED3 ${fix(t.light.led3)}%`);
+    setProgress("ledProgress", avg);
+    setText("targetOutput", t.light.target === null ? "—%" : `${t.light.target.toFixed(0)}%`);
+    setText("led1Value", t.light.led1 === null ? "—%" : `${t.light.led1.toFixed(0)}%`);
+    setText("led2Value", t.light.led2 === null ? "—%" : `${t.light.led2.toFixed(0)}%`);
+    setText("led3Value", t.light.led3 === null ? "—%" : `${t.light.led3.toFixed(0)}%`);
+
+    // LDRs
+    setText("eastLdr", fix(t.ldr.east)); setText("eastLdrCaption", `Filtered: ${fix(t.ldr.eastF, 1)}`); setProgress("eastBar", t.ldr.east === null ? 0 : t.ldr.east / 4095 * 100);
+    setText("westLdr", fix(t.ldr.west)); setText("westLdrCaption", `Filtered: ${fix(t.ldr.westF, 1)}`); setProgress("westBar", t.ldr.west === null ? 0 : t.ldr.west / 4095 * 100);
+    setText("ambientLdr", fix(t.ldr.ambient)); setText("ambientLdrCaption", `ADC full-scale: ${fix(t.ldr.ambientPct, 1)}%`); setProgress("ambientBar", t.ldr.ambientPct);
+
+    // Motion
+    const distOK = t.motion.valid && t.motion.distance !== null;
+    setText("distanceValue", distOK ? `${t.motion.distance.toFixed(1)} cm` : "No echo");
+    setText("motionFoot", t.motion.detected ? "Object detected · boost active" : `Trigger threshold ${fix(t.motion.trigger)} cm`);
+    setText("motionBadge", t.motion.detected ? "OBJECT DETECTED" : distOK ? "CLEAR" : "NO ECHO");
+    setText("motionEvents", fix(t.motion.events)); setText("holdSeconds", fix(t.motion.hold));
+    setText("triggerRange", fix(t.motion.trigger)); setText("sonarTimeouts", fix(t.motion.timeouts));
+
+    // Solar tracking / servo
+    setText("servoAngle", t.servo.angle === null ? "—" : `${t.servo.angle}`);
+    setText("trackingMoves", fix(t.servo.moves));
+    setText("trackingTarget", String(t.servo.target));
+    setText("servoMoving", t.servo.moving ? "Moving" : "Idle");
+    setText("trackingBadge", t.servo.tracking ? "AUTO TRACK" : "MANUAL");
+    if (t.servo.angle !== null && document.activeElement !== $("servoRange")) {
+      $("servoRange").value = String(Math.max(30, Math.min(150, t.servo.angle)));
+      setText("servoRangeValue", `${t.servo.angle}°`);
+    }
+
+    // Connection
+    setText("wifiRssi", t.wifiRssi === null ? "—" : `${t.wifiRssi} dBm`);
+    setText("uptimeValue", t.uptimeMs === null ? "—" : formatUptime(t.uptimeMs));
+
+    // Battery history
+    if (t.battery.profile && t.battery.voltage !== null) {
+      batteryHistory.push({ time: new Date(), value: t.battery.voltage });
+      while (batteryHistory.length > 20) batteryHistory.shift();
+      renderBatteryChart();
+    }
+
+    storeTelemetrySnapshot(t);
+
+    if (packetCount === 1 || packetCount % 30 === 0) addLog(`Telemetry received · packet ${packetCount}`);
+  }
+
+  function formatUptime(ms) {
+    let s = Math.floor(ms / 1000); const d = Math.floor(s / 86400); s %= 86400;
+    const h = Math.floor(s / 3600); s %= 3600; const m = Math.floor(s / 60);
+    return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m ${s % 60}s`;
+  }
+
+  function renderBatteryChart() {
+    const host = $("batteryChart");
+    const w = 620, h = 170, left = 40, right = 12, top = 12, bottom = 25;
+    const vals = batteryHistory.map(v => v.value);
+    let min = Math.min(...vals) - 0.08, max = Math.max(...vals) + 0.08;
+    if (max - min < 0.15) { min -= 0.08; max += 0.08; }
+    const x = i => left + (batteryHistory.length === 1 ? 0 : i * (w - left - right) / (batteryHistory.length - 1));
+    const y = v => top + (max - v) * (h - top - bottom) / (max - min);
+    const points = vals.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+    const area = `${left},${h - bottom} ${points} ${x(vals.length - 1)},${h - bottom}`;
+    const grid = [min, (min + max) / 2, max].map(v =>
+      `<line class="chart-grid" x1="${left}" y1="${y(v)}" x2="${w - right}" y2="${y(v)}"/>` +
+      `<text class="chart-axis" x="${left - 7}" y="${y(v) + 3}" text-anchor="end">${v.toFixed(2)}V</text>`).join("");
+    const fmtTime = d => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    host.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Battery voltage history">
+      <defs><linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#67d9e7"/><stop offset="100%" stop-color="#67d9e7" stop-opacity="0"/></linearGradient></defs>
+      ${grid}<polygon class="chart-area" points="${area}"/><polyline class="chart-line" points="${points}"/>
+      ${batteryHistory.map((v, i) => `<circle cx="${x(i)}" cy="${y(v.value)}" r="3" fill="#8de9da"/>`).join("")}
+      <text class="chart-axis" x="${left}" y="${h - 5}">${fmtTime(batteryHistory[0].time)}</text>
+      <text class="chart-axis" x="${w - right}" y="${h - 5}" text-anchor="end">${fmtTime(batteryHistory[batteryHistory.length - 1].time)}</text></svg>`;
+  }
+
+  // ---------- Commands (only actions the sketch accepts) ----------
+  function publishCommand(action, value) {
+    if (!mqttClient || !mqttClient.connected) { showToast("MQTT broker is not connected.", "error"); return false; }
+    const key = $("commandKey").value.trim();
+    if (!key) { showToast("Enter the MQTT_COMMAND_KEY from your ESP32 sketch.", "error"); $("commandKey").focus(); return false; }
+    const command = { key, action };
+    if (value !== undefined) command.value = value;
+    mqttClient.publish(MQTT_CONFIG.controlTopic, JSON.stringify(command), { qos: 0, retain: false }, err => {
+      if (err) { addLog(`Command failed: ${err.message}`, "error"); showToast("Command could not be published.", "error"); }
+      else { addLog(`Command sent: ${action}${value !== undefined ? ` = ${JSON.stringify(value)}` : ""}`); showToast(`Sent ${action}`, "success"); }
+    });
+    return true;
+  }
+
+  function connectMqtt() {
+    if (!window.mqtt || typeof window.mqtt.connect !== "function") {
+      setBrokerState(false, "MQTT.js did not load. Check internet access.");
+      showToast("MQTT.js did not load.", "error"); return;
+    }
+    const clientId = "solar_ai_web_" + Math.random().toString(16).slice(2, 12);
+    addLog(`Connecting to ${MQTT_CONFIG.url}`);
+    mqttClient = window.mqtt.connect(MQTT_CONFIG.url, { clientId, clean: true, connectTimeout: 12000, keepalive: 30, reconnectPeriod: 2500, resubscribe: true, protocolVersion: 4 });
+    mqttClient.on("connect", () => {
+      setBrokerState(true, "Connected to broker over secure WebSocket.");
+      mqttClient.subscribe(MQTT_CONFIG.telemetryTopic, { qos: 0 }, err => {
+        if (err) addLog(`Subscription failed: ${err.message}`, "error");
+        else { addLog(`Subscribed to ${MQTT_CONFIG.telemetryTopic}`); showToast("Waiting for ESP32 telemetry.", "success"); }
+      });
+    });
+    mqttClient.on("reconnect", () => setBrokerState(false, "Reconnecting…"));
+    mqttClient.on("offline", () => setBrokerState(false, "Client offline."));
+    mqttClient.on("close", () => setBrokerState(false));
+    mqttClient.on("error", e => { setBrokerState(false); addLog(`MQTT error: ${e.message || e}`, "error"); });
+    mqttClient.on("message", (topic, payload) => {
+      if (topic !== MQTT_CONFIG.telemetryTopic) return;
+      try { renderTelemetry(parseTelemetry(JSON.parse(payload.toString()))); }
+      catch (e) { addLog(e.message, "warn"); }
+    });
+  }
+
+  // ---------- Control bindings ----------
+  document.querySelectorAll("[data-mode]").forEach(button => button.addEventListener("click", () => {
+    const mode = button.dataset.mode;
+    if (publishCommand("mode", mode)) {
+      selectedMode = mode; setText("selectedMode", mode.toUpperCase());
+      document.querySelectorAll("[data-mode]").forEach(b => b.classList.toggle("active", b === button));
+    }
+  }));
+  $("brightnessRange").addEventListener("input", e => setText("brightnessValue", `${e.target.value}%`));
+  $("brightnessRange").addEventListener("change", e => publishCommand("dim", Number(e.target.value)));
+  $("servoRange").addEventListener("input", e => setText("servoRangeValue", `${e.target.value}°`));
+  $("setServoBtn").addEventListener("click", () => publishCommand("servo", Number($("servoRange").value)));
+  $("trackBtn").addEventListener("click", () => publishCommand("track"));
+  $("toggleKeyBtn").addEventListener("click", () => {
+    const input = $("commandKey"), hidden = input.type === "password";
+    input.type = hidden ? "text" : "password"; $("toggleKeyBtn").textContent = hidden ? "Hide" : "Show";
+  });
+
+  // ---------- AI assistant (server-side endpoint only) ----------
+  $("askAiBtn").addEventListener("click", async () => {
+    const report = $("aiReport"), button = $("askAiBtn");
+    if (!latestTelemetry) { showToast("No telemetry has arrived yet.", "error"); return; }
+    const question = $("aiQuestion").value.trim() || "Create a prediction for all eight intelligent-lighting capabilities. Mark unavailable inputs as insufficient data and do not invent readings.";
+    button.disabled = true; button.textContent = "Generating prediction…";
+    report.textContent = "Sending live telemetry and local history to the AI endpoint…";
+    try {
+      const response = await fetch(window.SOLAR_AI_CHAT_API, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: question, context: {
+          device: latestTelemetry,
+          telemetryHistory: storedTelemetry.slice(-12),
+          predictionHistory: storedPredictions.slice(-5),
+          source: "solar-ai-dashboard"
+        } }) });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || body.message || `HTTP ${response.status}`);
+      const answer = body.reply || body.response || body.message || body.content || body.output || body.text;
+      if (typeof answer !== "string" || !answer.trim()) throw new Error("No recognizable text in the response.");
+      report.textContent = answer; applyGroqPredictions(body.predictions); storePrediction(question, answer); addLog("AI predictive assessment received.");
+    } catch (error) {
+      report.textContent = `AI request failed: ${error.message}`;
+      addLog(`AI assistant error: ${error.message}`, "error");
+    } finally {
+      button.disabled = false; button.textContent = "Generate predictive assessment";
+    }
+  });
+
+  // ---------- Staleness watchdog ----------
+  setInterval(() => {
+    if (lastTelemetryAt && Date.now() - lastTelemetryAt > MQTT_CONFIG.telemetryTimeoutMs) {
+      $("deviceDot").className = "dot bad";
+      setText("deviceStatus", "Device telemetry stale");
+      setText("deviceStatusDetail", "No recent telemetry");
+      $("deviceStatusDetail").className = "offline";
+    }
+  }, 1000);
+
+  window.addEventListener("beforeunload", () => { if (mqttClient) mqttClient.end(true); });
+
+  setText("telemetryTopicLabel", MQTT_CONFIG.telemetryTopic);
+  setText("controlTopicLabel", MQTT_CONFIG.controlTopic);
+  updateStoredRecordCount();
+  updateControls();
+  connectMqtt();
+</script>
+</body>
+</html>

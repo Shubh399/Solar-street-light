@@ -1,40 +1,8 @@
-functionsDirectory = "C:\\Users\\shubh\\Downloads\\Solar-AI-Netlify-Project\\Solar-AI-Netlify-Project\\netlify\\functions"
-functionsDirectoryOrigin = "config"
-redirectsOrigin = "config"
-plugins = []
-headers = []
-
 [build]
-publish = "C:\\Users\\shubh\\Downloads\\Solar-AI-Netlify-Project\\Solar-AI-Netlify-Project\\public"
-publishOrigin = "config"
-functions = "C:\\Users\\shubh\\Downloads\\Solar-AI-Netlify-Project\\Solar-AI-Netlify-Project\\netlify\\functions"
-
-[build.environment]
-
-[build.processing]
-
-[build.processing.css]
-
-[build.processing.html]
-
-[build.processing.images]
-
-[build.processing.js]
-
-[build.services]
-
-[functions]
-
-[functions."*"]
+  publish = "public"
+  functions = "netlify/functions"
 
 [[redirects]]
-from = "/api/chat"
-to = "/.netlify/functions/chat"
-status = 200.0
-force = false
-
-[redirects.query]
-
-[redirects.conditions]
-
-[redirects.headers]
+  from = "/api/chat"
+  to = "/.netlify/functions/chat"
+  status = 200
