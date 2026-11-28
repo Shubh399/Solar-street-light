@@ -109,10 +109,7 @@
   .btn-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
   input[type=range]{width:100%;accent-color:var(--cyan)}
   .range-scale{display:flex;justify-content:space-between;color:var(--muted);font-size:10px;margin-top:4px}
-  .key-row{display:flex;gap:7px}
-  .text-input,.key-input{min-width:0;width:100%;border:1px solid var(--border);border-radius:9px;padding:10px;color:var(--text);background:rgba(0,0,0,.18);outline:none;font-size:12px}
-  .key-input{flex:1}
-  .subtle{border:1px solid var(--border);border-radius:9px;color:var(--soft);background:rgba(255,255,255,.035);padding:0 12px;font-size:11px}
+  .text-input{min-width:0;width:100%;border:1px solid var(--border);border-radius:9px;padding:10px;color:var(--text);background:rgba(0,0,0,.18);outline:none;font-size:12px}
   .mini{color:var(--muted);font-size:10px;line-height:1.5;margin:9px 0 0}
   .notice{border:1px solid rgba(246,198,107,.2);border-radius:12px;background:rgba(246,198,107,.055);color:#d9c28f;padding:10px 12px;font-size:11px;line-height:1.5;margin-top:12px}
 
@@ -284,15 +281,6 @@
           <input id="brightnessRange" type="range" min="0" max="100" step="1" value="40" disabled/>
           <div class="range-scale"><span>0%</span><span>100%</span></div>
           <p class="mini">Sends <code>dim</code>. Choose Auto to return to sensor-driven operation.</p>
-        </div>
-        <div class="control">
-          <div class="control-row"><span class="control-label">Command key</span><span class="tag">Required</span></div>
-          <div class="key-row">
-            <input id="commandKey" class="key-input" type="password" placeholder="Enter MQTT_COMMAND_KEY" autocomplete="off" spellcheck="false"/>
-            <button id="toggleKeyBtn" class="subtle" type="button">Show</button>
-          </div>
-          <p class="mini">Must exactly match <code>MQTT_COMMAND_KEY</code> in the ESP32 sketch. The key stays only in this browser tab.</p>
-          <button id="submitCommandKeyBtn" class="btn primary" type="button" style="width:100%;margin-top:10px">Submit command key</button>
         </div>
       </section>
 
@@ -694,9 +682,7 @@
   // ---------- Commands (only actions the sketch accepts) ----------
   function publishCommand(action, value) {
     if (!mqttClient || !mqttClient.connected) { showToast("MQTT broker is not connected.", "error"); return false; }
-    const key = $("commandKey").value.trim();
-    if (!key) { showToast("Enter the MQTT_COMMAND_KEY from your ESP32 sketch.", "error"); $("commandKey").focus(); return false; }
-    const command = { key, action };
+    const command = { action };
     if (value !== undefined) command.value = value;
     mqttClient.publish(MQTT_CONFIG.controlTopic, JSON.stringify(command), { qos: 0, retain: false }, err => {
       if (err) { addLog(`Command failed: ${err.message}`, "error"); showToast("Command could not be published.", "error"); }
@@ -744,24 +730,6 @@
   $("servoRange").addEventListener("input", e => setText("servoRangeValue", `${e.target.value}°`));
   $("setServoBtn").addEventListener("click", () => publishCommand("servo", Number($("servoRange").value)));
   $("trackBtn").addEventListener("click", () => publishCommand("track"));
-  $("toggleKeyBtn").addEventListener("click", () => {
-    const input = $("commandKey"), hidden = input.type === "password";
-    input.type = hidden ? "text" : "password"; $("toggleKeyBtn").textContent = hidden ? "Hide" : "Show";
-  });
-  function submitCommandKey() {
-    const key = $("commandKey").value.trim();
-    if (!key) { showToast("Enter the MQTT_COMMAND_KEY before submitting.", "error"); $("commandKey").focus(); return; }
-    $("submitCommandKeyBtn").textContent = "Command key ready";
-    addLog("Command key submitted for this browser session.");
-    showToast("Command key is ready to use.", "success");
-  }
-  $("submitCommandKeyBtn").addEventListener("click", submitCommandKey);
-  $("commandKey").addEventListener("keydown", event => {
-    if (event.key === "Enter") { event.preventDefault(); submitCommandKey(); }
-  });
-  $("commandKey").addEventListener("input", () => {
-    $("submitCommandKeyBtn").textContent = "Submit command key";
-  });
 
   // ---------- AI assistant (server-side endpoint only) ----------
   $("askAiBtn").addEventListener("click", async () => {
